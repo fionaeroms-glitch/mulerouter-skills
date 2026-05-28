@@ -1,93 +1,138 @@
-# MuleRouter API Reference
+# mulerouter CLI Reference
 
-## Configuration
+Reference for the `mulerouter` npm CLI used to invoke MuleRouter / MuleRun multimodal endpoints. Install with `npm install -g mulerouter` (or run via `npx -y mulerouter@latest`).
 
-### Environment Variables
+## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `MULEROUTER_API_KEY` | Yes | API key for authentication |
-| `MULEROUTER_BASE_URL` | No* | Custom API base URL (takes priority over SITE) |
-| `MULEROUTER_SITE` | No* | API site: `mulerouter` or `mulerun` |
+| `MULEROUTER_API_KEY` | **Yes** | Bearer token sent in the `Authorization` header. |
+| `MULEROUTER_BASE_URL` | one-of | Full base URL (e.g. `https://api.mulerouter.ai`). Takes priority over `MULEROUTER_SITE`. |
+| `MULEROUTER_SITE` | one-of | `mulerouter` or `mulerun`. Used only when `MULEROUTER_BASE_URL` is unset. |
 
-*Either `MULEROUTER_BASE_URL` or `MULEROUTER_SITE` must be set.
+A `.env` file in the working directory is auto-loaded; only `MULEROUTER_*`-prefixed variables are read. Other variables in the file are ignored.
 
-### .env File Example
+## Subcommands
 
-```env
-# Option 1: Use custom base URL (takes priority)
-MULEROUTER_BASE_URL=https://api.mulerouter.ai
-MULEROUTER_API_KEY=your-api-key
+### `mulerouter list [flags]`
 
-# Option 2: Use site (if BASE_URL not set)
-# MULEROUTER_SITE=mulerun
-# MULEROUTER_API_KEY=your-api-key
-```
+List registered endpoints.
 
-## CLI Options
+| Flag | Description |
+|------|-------------|
+| `--provider <name>` | Filter by provider (e.g. `alibaba`, `google`, `klingai`, `midjourney`, `minimax`, `openai`, `bytedance`). |
+| `--site <site>` | `mulerouter` or `mulerun`. Filters to endpoints available on that gateway. |
+| `--output-type <type>` | `image` / `video` / `audio`. |
+| `--tag <tag>` | Filter by tag (e.g. `SOTA`). |
+| `--providers` | List provider names only (no endpoints). |
+| `--json` | Emit JSON. |
 
-All model scripts support these options:
+### `mulerouter params <provider>/<model>[/<action>]`
 
-| Option | Description |
-|--------|-------------|
-| `--list-params` | Show available parameters and exit |
-| `--json` | Output results as JSON |
-| `--no-wait` | Return task ID immediately without polling |
-| `--poll-interval N` | Polling interval in seconds (default: 5) |
-| `--max-wait N` | Maximum wait time in seconds (default: 600) |
-| `--quiet` | Suppress progress output |
-| `--base-url URL` | Override API base URL (takes priority over --site) |
-| `--site SITE` | Override API site (mulerouter/mulerun) |
-| `--api-key KEY` | Override API key |
+Print the parameter schema (name, type, required, default, enum) for one endpoint. Use this before crafting a `run` call when uncertain about flags. If `<action>` is omitted and unambiguous, it is auto-resolved. Flag: `--json`.
 
-## Task Workflow
+### `mulerouter run <provider>/<model>[/<action>] [flags]`
 
-All generation tasks are asynchronous:
+Invoke an endpoint. CLI flags follow `--snake-or-kebab-name <value>`; the CLI converts `-` to `_` when building the request body. Unknown flags pass through as model parameters (via `allowUnknownOption`). `--key=value` and `--no-key` (→ `false`) syntax both work.
 
-1. **Create Task**: POST request returns a task ID
-2. **Poll Status**: GET request checks task status (pending -> processing -> completed/failed)
-3. **Get Results**: Completed tasks include URLs to generated images/videos
+Common flags applicable to every `run`:
 
-The scripts handle polling automatically. Use `--no-wait` for manual control.
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--site <site>` | env value | Override `MULEROUTER_SITE` for this call. Required when an endpoint is routed on only one gateway. |
+| `--api-key <key>` | env value | Override `MULEROUTER_API_KEY`. |
+| `--base-url <url>` | env value | Override `MULEROUTER_BASE_URL`. |
+| `--no-wait` | off | Submit the task and return its id/api_path without polling. |
+| `--poll-interval <sec>` | `20` | Seconds between status polls (when waiting). |
+| `--max-wait <sec>` | `900` | Total seconds to wait before timing out. |
+| `--quiet` | off | Suppress progress output. |
+| `--json` | off | Emit machine-readable JSON instead of plain text. |
+| `--extra <key=value>` | — | Repeatable. Pass parameters not declared in the endpoint registry. |
 
-## API Sites
+### `mulerouter status <api-path> <task-id> [flags]`
 
-| Site | Base URL | Notes |
-|------|----------|-------|
-| MuleRouter | `api.mulerouter.ai` | Full model catalog |
-| MuleRun | `api.mulerun.com` | Full model catalog |
+Check status of an async task previously submitted with `--no-wait`. The first argument is the `api_path` returned by the submit step (also documented in [MODELS.md](MODELS.md) and in each SKILL.md model section).
 
-Both sites share the same API format. Model availability may differ between sites.
+| Flag | Description |
+|------|-------------|
+| `--wait` | Block until terminal status (uses `--poll-interval` / `--max-wait`). |
+| `--api-key <key>` | Override `MULEROUTER_API_KEY`. |
+| `--base-url <url>` | Override `MULEROUTER_BASE_URL`. |
+| `--site <site>` | Must match the site the task was submitted to. |
+| `--poll-interval <sec>` | Polling cadence when `--wait`. Default `20`. |
+| `--max-wait <sec>` | Hard timeout when `--wait`. Default `900`. |
+| `--quiet` | Suppress progress output. |
+| `--json` | Emit JSON. |
 
-## Error Handling
+### `mulerouter config`
 
-Common error responses:
+Print the effective configuration (loaded env vars, resolved base URL, site, etc.) and any setup help. Useful for diagnosing "where is my config coming from?" issues.
 
-| Code | Meaning | Solution |
-|------|---------|----------|
-| 401 | Invalid API key | Check MULEROUTER_API_KEY |
-| 400 | Invalid parameters | Run `--list-params` to see valid options |
-| 429 | Rate limited | Wait and retry |
-| 500 | Server error | Retry after a few seconds |
+## Image Parameter Handling
 
-## Output Format
-
-### JSON Output (--json)
-
-```json
-{
-  "task_id": "2227246C-760C-4167-906C-DD727D7BBBEC",
-  "status": "completed",
-  "videos": ["https://..."],
-  "images": ["https://..."]
-}
-```
-
-### Default Output
+The following flag names are treated as image parameters and accept local file paths, HTTPS URLs, or `data:image/...` URIs:
 
 ```
-Task ID: 2227246C-760C-4167-906C-DD727D7BBBEC
-Status: completed
-Result URLs:
-  - https://...
+image, images, first_frame, last_frame, last_frame_image,
+first_frame_url, last_frame_url, ref_images_url, reference_images,
+mask, mask_image_url
 ```
+
+When a local path is supplied, the CLI:
+
+1. Validates the file extension (`.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`, `.tiff`, `.tif`, `.svg`, `.ico`, `.heic`, `.heif`, `.avif`).
+2. Reads and base64-encodes the file.
+3. Sends the encoded payload in place of the path.
+
+URLs and `data:` URIs are forwarded unchanged.
+
+For array-valued image flags, pass a single-quoted JSON literal:
+
+```bash
+--images '["/tmp/a.png","https://example.com/b.png"]'
+```
+
+## Other JSON Flags
+
+`--multi-prompt`, `--elements`, `--video`, `--videos`, `--audios`, `--reference-images`, `--ref-images-url` all take JSON literals. Examples:
+
+```bash
+--multi-prompt '[{"prompt":"opening shot","duration":3},{"prompt":"closing","duration":5}]'
+--video '[{"video_url":"https://example.com/clip.mp4","refer_type":"feature","keep_original_sound":"no"}]'
+```
+
+## Async Lifecycle
+
+Every `mulerouter run` invocation is task-based — there is no synchronous code path in the CLI:
+
+1. `mulerouter run <id> ...` POSTs to the api_path, receives `{task_info: {id, status, ...}, api_path}` (the response also hoists `task_id` to the top level for convenience).
+2. Unless `--no-wait` is passed, the CLI polls `GET <api_path>/<task_id>` every `--poll-interval` seconds.
+3. On terminal status (`completed` / `succeeded` / `failed`), the final task body is printed; generated media URLs are under `result[<resultKey>]`.
+
+Some endpoints (notably `midjourney/diffusion/generation`) typically complete on the very first poll, but the lifecycle is the same as long-running video jobs.
+
+## Client-side Validation
+
+The CLI validates **only** enum membership for parameters that declare an `enum`. It does **not** enforce:
+
+- Numeric ranges (e.g. "duration 3..15" in a description string)
+- "At-least-one-of" requirements (e.g. kling i2v needs first or last frame)
+- Conditional requirements (e.g. mask requires images)
+
+Out-of-range or incomplete inputs are forwarded to the API and returned as a 400.
+
+## `--model` Flag
+
+Reserved by the gateway. **Never pass `--model`** except:
+
+- `alibaba/wan2.1-vace-plus/generation` — must pass `--model wan2.1-vace-plus` (legacy quirk).
+- `google/veo3/generation` — pass `--model {veo-3.1,veo-3.1-fast,veo-3}` to pick the variant.
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success. |
+| `1` | Generic error (invalid flags, network failure, missing env). |
+| `2` | Task reached non-success terminal state (`failed`). |
+| `124` | Polling timed out (`--max-wait` exceeded). |
